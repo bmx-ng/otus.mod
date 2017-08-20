@@ -48,8 +48,8 @@ Type TLzmaStream Extends TStreamWrapper
 Rem
 bbdoc: Closes the stream, writing any changes
 End Rem
-	Method Close:Int()
-		If _closed Return 0
+	Method Close()
+		If _closed Return
 		Flush()
 		If _basestream Then _basestream.Close()
 		If _stream Then _stream.Close()
@@ -84,7 +84,11 @@ End Rem
 		_basestream.Seek(0)
 		
 		'Copy stream contents to a bank
-		Local b:TBank = CreateBank(_basestream.Size())
+?bmxng
+		Local b:TBank = TBank.Create(Size_T(_basestream.Size()))
+?Not bmxng
+		Local b:TBank = TBank.Create(_basestream.Size())
+?
 		CopyStream _basestream, CreateBankStream(b)
 		
 		'Set up bank for raw access
@@ -93,16 +97,22 @@ End Rem
 		'Is this uncompressed data?
 ?bmxng
 		Local size:Size_T = b.Size()-8
-		Local usize:Size_T = Int Ptr(buf)[1] + 1
+		Local usize:Long = Int Ptr(buf)[1] + 1
 ?Not bmxng		
 		Local size:Int = b.Size()-8
 		Local usize:Int = Int Ptr(buf)[1] + 1
 ?
 		If usize<=1
 			If -usize <> size Return
-			Local u:TBank = CreateBank(-usize)
+?bmxng
+			Local u:TBank = TBank.Create(Size_T(-usize))
+			Local ubuf:Byte Ptr = u.Lock()
+			MemCopy ubuf, buf+8, Size_T(-usize)
+?Not bmxng		
+			Local u:TBank = TBank.Create(-usize)
 			Local ubuf:Byte Ptr = u.Lock()
 			MemCopy ubuf, buf+8, -usize
+?
 			u.Unlock()
 			_stream = CreateBankStream(u)
 			Return
@@ -110,16 +120,30 @@ End Rem
 		
 		
 		'Create a bank for uncompressed data
-		Local u:TBank = CreateBank(usize)
+?bmxng
+		Local u:TBank = TBank.Create(Size_T(usize))
 		Local ubuf:Byte Ptr = u.Lock()
-		
+
+		Local us:Size_T = Size_T(usize)
+		LzmaUncompress ubuf, us, buf+8, size
+		usize = us
+?Not bmxng		
+		Local u:TBank = TBank.Create(usize)
+		Local ubuf:Byte Ptr = u.Lock()
+
 		LzmaUncompress ubuf, usize, buf+8, size
+?
+		
 		
 		'Not valid LZMA?
 		If usize <> u.Size()-1 Then Return
 		
 		u.Unlock()
+?bmxng
+		u.Resize(Size_T(usize))
+?Not bmxng
 		u.Resize(usize)
+?
 		
 		_stream = CreateBankStream(u)
 	End Method
@@ -127,7 +151,7 @@ End Rem
 Rem
 bbdoc: Flushes current data to the raw stream
 End Rem
-	Method Flush:Int()
+	Method Flush()
 
 		'Set up bank for raw access
 		Local b:TBank = TBankStream(_stream)._bank
@@ -144,7 +168,7 @@ End Rem
 ?Not bmxng
 		Local csize:Int = bsize + 1024
 ?
-		Local c:TBank = CreateBank(csize)
+		Local c:TBank = TBank.Create(csize)
 		Local cbuf:Byte Ptr = c.Lock()
 		
 		LzmaCompress2 cbuf, csize, buf, bsize, _level
